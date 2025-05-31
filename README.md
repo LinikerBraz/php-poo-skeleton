@@ -1,3 +1,6 @@
+
+Grupo: Luiz Liniker Braz Eliziário e Matheus Bento
+
 # 🐘 PHP POO Skeleton
 
 [![PHP Version](https://img.shields.io/badge/php-8.1%2B-blue)](https://www.php.net/)
