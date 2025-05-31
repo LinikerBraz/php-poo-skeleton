@@ -2,291 +2,249 @@
 
 namespace Hogwarts\Models\Module1;
 
-use Hogwarts\Models\Base\Person;
-use Hogwarts\Models\Enums\StudentStatus;
-use Hogwarts\Models\Enums\HouseType;
+use Hogwarts\Models\Base\Entity;
 
-class Student extends Person
+class Invitation extends Entity
 {
-    private StudentStatus $status;
-    private ?HouseType $casa = null;
-    private int $ano;
-    private array $materias = [];
-    private int $pontos = 0;
-    private array $registrosDisciplinares = [];
-    private ?string $tipoVarinha = null;
-    private ?string $patrono = null;
-    private array $habilidades = [];
-    private array $conquistas = [];
-    private ?string $statusSangue = null;
-    private array $membrosFamilia = [];
-    private array $registrosMedicos = [];
+    private string $nomeAluno;
+    private string $emailAluno;
+    private \DateTime $dataNascimento;
+    private string $codigoConvite;
+    private bool $aceito = false;
+    private ?\DateTime $aceitoEm = null;
+    private ?\DateTime $expiraEm = null;
+    private array $habilidadesMagicas = [];
+    private ?string $antecedentesFamiliares = null;
+    private int $contadorTentativas = 0;
+    private int $maximoTentativas = 3;
+    private bool $cancelado = false;
+    private ?\DateTime $canceladoEm = null;
+    private ?string $motivoCancelamento = null;
+    private array $observacoesAdicionais = [];
 
-    public function __construct(string $nome, string $email, \DateTime $dataNascimento, string $endereco = '')
+    public function __construct(string $nomeAluno, string $emailAluno, \DateTime $dataNascimento)
     {
-        parent::__construct($nome, $email, $dataNascimento, $endereco);
-        $this->status = StudentStatus::CONVIDADO;
-        $this->ano = 1;
+        parent::__construct();
+        $this->nomeAluno = $nomeAluno;
+        $this->emailAluno = $emailAluno;
+        $this->dataNascimento = $dataNascimento;
+        $this->codigoConvite = $this->gerarCodigoConvite();
+        $this->expiraEm = (new \DateTime())->add(new \DateInterval('P30D')); // 30 dias
     }
 
-    public function getStatus(): StudentStatus
+    private function gerarCodigoConvite(): string
     {
-        return $this->status;
+        $iniciaisNome = strtoupper(substr($this->nomeAluno, 0, 2));
+        $hashUnico = strtoupper(substr(md5($this->emailAluno . time()), 0, 6));
+        return 'HOG-' . $iniciaisNome . '-' . $hashUnico;
     }
 
-    public function setStatus(StudentStatus $status): void
+    public function getNomeAluno(): string
     {
-        $this->status = $status;
+        return $this->nomeAluno;
+    }
+
+    public function getEmailAluno(): string
+    {
+        return $this->emailAluno;
+    }
+
+    public function getDataNascimento(): \DateTime
+    {
+        return $this->dataNascimento;
+    }
+
+    public function getCodigoConvite(): string
+    {
+        return $this->codigoConvite;
+    }
+
+    public function isAceito(): bool
+    {
+        return $this->aceito;
+    }
+
+    public function aceitar(): void
+    {
+        if ($this->isExpirado()) {
+            throw new \RuntimeException("Convite expirado");
+        }
+        
+        if ($this->cancelado) {
+            throw new \RuntimeException("Convite cancelado");
+        }
+        
+        $this->aceito = true;
+        $this->aceitoEm = new \DateTime();
         $this->atualizarTimestamp();
     }
 
-    public function getCasa(): ?HouseType
+    public function isExpirado(): bool
     {
-        return $this->casa;
+        return $this->expiraEm && $this->expiraEm < new \DateTime();
     }
 
-    public function setCasa(HouseType $casa): void
+    public function getExpiraEm(): ?\DateTime
     {
-        $this->casa = $casa;
+        return $this->expiraEm;
+    }
+
+    public function estenderExpiracao(int $dias): void
+    {
+        if ($this->aceito || $this->cancelado) {
+            throw new \RuntimeException("Não é possível estender um convite já aceito ou cancelado");
+        }
+        
+        $this->expiraEm = (new \DateTime())->add(new \DateInterval("P{$dias}D"));
         $this->atualizarTimestamp();
     }
 
-    public function getAno(): int
+    public function getAceitoEm(): ?\DateTime
     {
-        return $this->ano;
+        return $this->aceitoEm;
     }
 
-    public function setAno(int $ano): void
+    public function getHabilidadesMagicas(): array
     {
-        if ($ano < 1 || $ano > 7) {
-            throw new \InvalidArgumentException("Ano escolar deve estar entre 1 e 7");
-        }
-        $this->ano = $ano;
-        $this->atualizarTimestamp();
+        return $this->habilidadesMagicas;
     }
 
-    public function avancarAno(): bool
+    public function adicionarHabilidadeMagica(string $habilidade): void
     {
-        if ($this->ano < 7) {
-            $this->ano++;
-            $this->atualizarTimestamp();
-            return true;
-        }
-        return false;
-    }
-
-    public function getPontos(): int
-    {
-        return $this->pontos;
-    }
-
-    public function adicionarPontos(int $pontos): void
-    {
-        if ($pontos <= 0) {
-            throw new \InvalidArgumentException("Pontos adicionados devem ser positivos");
-        }
-        $this->pontos += $pontos;
-        $this->atualizarTimestamp();
-    }
-
-    public function removerPontos(int $pontos): void
-    {
-        if ($pontos <= 0) {
-            throw new \InvalidArgumentException("Pontos removidos devem ser positivos");
-        }
-        $this->pontos = max(0, $this->pontos - $pontos);
-        $this->atualizarTimestamp();
-    }
-
-    public function getMaterias(): array
-    {
-        return $this->materias;
-    }
-
-    public function adicionarMateria(string $materia): void
-    {
-        if (!in_array($materia, $this->materias)) {
-            $this->materias[] = $materia;
-            $this->atualizarTimestamp();
-        }
-    }
-
-    public function removerMateria(string $materia): void
-    {
-        $chave = array_search($materia, $this->materias);
-        if ($chave !== false) {
-            unset($this->materias[$chave]);
-            $this->materias = array_values($this->materias);
+        if (!in_array($habilidade, $this->habilidadesMagicas)) {
+            $this->habilidadesMagicas[] = $habilidade;
             $this->atualizarTimestamp();
         }
     }
 
-    public function getRegistrosDisciplinares(): array
+    public function getAntecedentesFamiliares(): ?string
     {
-        return $this->registrosDisciplinares;
+        return $this->antecedentesFamiliares;
     }
 
-    public function adicionarRegistroDisciplinar(string $registro, string $emitidoPor, string $gravidade = 'normal'): void
+    public function setAntecedentesFamiliares(string $antecedentes): void
     {
-        $this->registrosDisciplinares[] = [
-            'registro' => $registro,
-            'data' => new \DateTime(),
-            'emitidoPor' => $emitidoPor,
-            'gravidade' => $gravidade
+        $this->antecedentesFamiliares = $antecedentes;
+        $this->atualizarTimestamp();
+    }
+
+    public function getContadorTentativas(): int
+    {
+        return $this->contadorTentativas;
+    }
+
+    public function incrementarTentativa(): bool
+    {
+        if ($this->contadorTentativas >= $this->maximoTentativas) {
+            return false;
+        }
+        
+        $this->contadorTentativas++;
+        $this->atualizarTimestamp();
+        return true;
+    }
+
+    public function getMaximoTentativas(): int
+    {
+        return $this->maximoTentativas;
+    }
+
+    public function setMaximoTentativas(int $maximoTentativas): void
+    {
+        if ($maximoTentativas < 1) {
+            throw new \InvalidArgumentException("Número máximo de tentativas deve ser pelo menos 1");
+        }
+        
+        $this->maximoTentativas = $maximoTentativas;
+        $this->atualizarTimestamp();
+    }
+
+    public function isCancelado(): bool
+    {
+        return $this->cancelado;
+    }
+
+    public function cancelar(string $motivo = null): void
+    {
+        if ($this->aceito) {
+            throw new \RuntimeException("Não é possível cancelar um convite já aceito");
+        }
+        
+        $this->cancelado = true;
+        $this->canceladoEm = new \DateTime();
+        $this->motivoCancelamento = $motivo;
+        $this->atualizarTimestamp();
+    }
+
+    public function getCanceladoEm(): ?\DateTime
+    {
+        return $this->canceladoEm;
+    }
+
+    public function getMotivoCancelamento(): ?string
+    {
+        return $this->motivoCancelamento;
+    }
+
+    public function getObservacoesAdicionais(): array
+    {
+        return $this->observacoesAdicionais;
+    }
+
+    public function adicionarObservacao(string $observacao): void
+    {
+        $this->observacoesAdicionais[] = [
+            'observacao' => $observacao,
+            'data' => new \DateTime()
         ];
         $this->atualizarTimestamp();
     }
 
-    public function getTipoVarinha(): ?string
+    public function isValido(): bool
     {
-        return $this->tipoVarinha;
+        return !$this->isExpirado() && !$this->isCancelado() && !$this->isAceito();
     }
 
-    public function setTipoVarinha(string $tipoVarinha): void
+    public function getStatus(): string
     {
-        $this->tipoVarinha = $tipoVarinha;
-        $this->atualizarTimestamp();
-    }
-
-    public function getPatrono(): ?string
-    {
-        return $this->patrono;
-    }
-
-    public function setPatrono(string $patrono): void
-    {
-        $this->patrono = $patrono;
-        $this->atualizarTimestamp();
-    }
-
-    public function getHabilidades(): array
-    {
-        return $this->habilidades;
-    }
-
-    public function adicionarHabilidade(string $habilidade, int $nivel = 1): void
-    {
-        $this->habilidades[$habilidade] = $nivel;
-        $this->atualizarTimestamp();
-    }
-
-    public function melhorarHabilidade(string $habilidade, int $incremento = 1): void
-    {
-        if (isset($this->habilidades[$habilidade])) {
-            $this->habilidades[$habilidade] += $incremento;
-            $this->atualizarTimestamp();
+        if ($this->aceito) {
+            return 'Aceito';
+        } elseif ($this->cancelado) {
+            return 'Cancelado';
+        } elseif ($this->isExpirado()) {
+            return 'Expirado';
+        } else {
+            return 'Pendente';
         }
     }
 
-    public function getConquistas(): array
+    public function getDiasParaExpirar(): int
     {
-        return $this->conquistas;
-    }
-
-    public function adicionarConquista(string $conquista, \DateTime $data = null): void
-    {
-        $this->conquistas[] = [
-            'titulo' => $conquista,
-            'data' => $data ?? new \DateTime()
-        ];
-        $this->atualizarTimestamp();
-    }
-
-    public function getStatusSangue(): ?string
-    {
-        return $this->statusSangue;
-    }
-
-    public function setStatusSangue(string $statusSangue): void
-    {
-        $statusValidos = ['puro-sangue', 'mestiço', 'nascido-trouxa', 'desconhecido'];
-        if (!in_array(strtolower($statusSangue), $statusValidos)) {
-            throw new \InvalidArgumentException("Status de sangue inválido");
+        if (!$this->expiraEm || $this->isExpirado()) {
+            return 0;
         }
-        $this->statusSangue = strtolower($statusSangue);
-        $this->atualizarTimestamp();
-    }
-
-    public function getMembrosFamilia(): array
-    {
-        return $this->membrosFamilia;
-    }
-
-    public function adicionarMembroFamilia(string $nome, string $parentesco): void
-    {
-        $this->membrosFamilia[] = [
-            'nome' => $nome,
-            'parentesco' => $parentesco
-        ];
-        $this->atualizarTimestamp();
-    }
-
-    public function getRegistrosMedicos(): array
-    {
-        return $this->registrosMedicos;
-    }
-
-    public function adicionarRegistroMedico(string $condicao, string $tratamento = '', bool $resolvido = false): void
-    {
-        $this->registrosMedicos[] = [
-            'condicao' => $condicao,
-            'tratamento' => $tratamento,
-            'data' => new \DateTime(),
-            'resolvido' => $resolvido
-        ];
-        $this->atualizarTimestamp();
-    }
-
-    public function atualizarRegistroMedico(int $indice, bool $resolvido): void
-    {
-        if (isset($this->registrosMedicos[$indice])) {
-            $this->registrosMedicos[$indice]['resolvido'] = $resolvido;
-            $this->atualizarTimestamp();
-        }
-    }
-
-    public function podeFrequentarAulas(): bool
-    {
-        return $this->status->podeFrequentarAulas();
-    }
-
-    public function temProblemasmedicos(): bool
-    {
-        foreach ($this->registrosMedicos as $registro) {
-            if (!$registro['resolvido']) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public function getMediaPontos(): float
-    {
-        if ($this->ano === 1) {
-            return $this->pontos;
-        }
-        return $this->pontos / $this->ano;
+        
+        $agora = new \DateTime();
+        $diferenca = $agora->diff($this->expiraEm);
+        return $diferenca->days;
     }
 
     public function toArray(): array
     {
         return [
             'id' => $this->getId(),
-            'nome' => $this->getNome(),
-            'email' => $this->getEmail(),
-            'dataNascimento' => $this->getDataNascimento()->format('Y-m-d'),
-            'idade' => $this->getIdade(),
-            'endereco' => $this->getEndereco(),
-            'status' => $this->status->value,
-            'casa' => $this->casa?->value,
-            'ano' => $this->ano,
-            'pontos' => $this->pontos,
-            'materias' => $this->materias,
-            'tipoVarinha' => $this->tipoVarinha,
-            'patrono' => $this->patrono,
-            'statusSangue' => $this->statusSangue,
-            'podeFrequentarAulas' => $this->podeFrequentarAulas(),
-            'temProblemasmedicos' => $this->temProblemasmedicos(),
+            'nomeAluno' => $this->nomeAluno,
+            'emailAluno' => $this->emailAluno,
+            'dataNascimento' => $this->dataNascimento->format('Y-m-d'),
+            'codigoConvite' => $this->codigoConvite,
+            'status' => $this->getStatus(),
+            'expiraEm' => $this->expiraEm ? $this->expiraEm->format('Y-m-d H:i:s') : null,
+            'aceitoEm' => $this->aceitoEm ? $this->aceitoEm->format('Y-m-d H:i:s') : null,
+            'habilidadesMagicas' => $this->habilidadesMagicas,
+            'antecedentesFamiliares' => $this->antecedentesFamiliares,
+            'contadorTentativas' => $this->contadorTentativas,
+            'maximoTentativas' => $this->maximoTentativas,
+            'diasParaExpirar' => $this->getDiasParaExpirar(),
             'criadoEm' => $this->getCriadoEm()->format('Y-m-d H:i:s'),
             'atualizadoEm' => $this->getAtualizadoEm()->format('Y-m-d H:i:s')
         ];
